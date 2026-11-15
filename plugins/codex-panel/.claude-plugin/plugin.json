@@ -1,0 +1,6 @@
+{
+  "name": "codex-panel",
+  "version": "0.1.0",
+  "description": "Pane beside the chat showing Codex plugin jobs live: progress, what Codex is doing, and its answers",
+  "types": "./types/index.d.ts"
+}
