@@ -1,10 +1,11 @@
 {
-  "name": "openai-codex",
+  "name": "claudex",
   "owner": {
-    "name": "OpenAI"
+    "name": "Awekin",
+    "url": "https://github.com/Awekin"
   },
   "metadata": {
-    "description": "Codex plugins to use in Claude Code for delegation and code review.",
+    "description": "Claudex: Codex inside Claude Code. Fork of openai/codex-plugin-cc with shared context, Codex App project threads, result cards and a live Codex panel.",
     "version": "1.0.6"
   },
   "plugins": [
@@ -16,6 +17,15 @@
         "name": "OpenAI"
       },
       "source": "./plugins/codex"
+    },
+    {
+      "name": "codex-panel",
+      "description": "Pane beside the chat showing Codex jobs live: progress, what Codex is doing, its answers.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Awekin"
+      },
+      "source": "./plugins/codex-panel"
     }
   ]
 }
