@@ -1,3 +1,5 @@
+import process from "node:process";
+
 function severityRank(severity) {
   switch (severity) {
     case "critical":
@@ -312,7 +314,7 @@ export function renderNativeReviewResult(result, meta) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-export function renderTaskResult(parsedResult, meta) {
+function renderPlainTaskResult(parsedResult) {
   const rawOutput = typeof parsedResult?.rawOutput === "string" ? parsedResult.rawOutput : "";
   if (rawOutput) {
     return rawOutput.endsWith("\n") ? rawOutput : `${rawOutput}\n`;
@@ -320,6 +322,142 @@ export function renderTaskResult(parsedResult, meta) {
 
   const message = String(parsedResult?.failureMessage ?? "").trim() || "Codex did not return a final message.";
   return `${message}\n`;
+}
+
+function countDiffLines(diff) {
+  let added = 0;
+  let removed = 0;
+  for (const line of String(diff ?? "").split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue;
+    }
+    if (line.startsWith("+")) {
+      added += 1;
+    } else if (line.startsWith("-")) {
+      removed += 1;
+    }
+  }
+  return { added, removed };
+}
+
+function relativeTo(root, file) {
+  if (root && typeof file === "string" && file.startsWith(`${root}/`)) {
+    return file.slice(root.length + 1);
+  }
+  return file;
+}
+
+/** Collapses fileChange items into one row per path with +/- line counts. */
+export function summarizeFileChanges(fileChanges, root = null) {
+  const byPath = new Map();
+  for (const item of fileChanges ?? []) {
+    for (const change of item?.changes ?? []) {
+      if (!change?.path) {
+        continue;
+      }
+      const key = relativeTo(root, change.path);
+      const entry = byPath.get(key) ?? { path: key, kind: null, added: 0, removed: 0 };
+      const kind = typeof change.kind === "string" ? change.kind : change.kind?.type;
+      entry.kind = entry.kind ?? kind ?? "update";
+      const counts = countDiffLines(change.diff);
+      entry.added += counts.added;
+      entry.removed += counts.removed;
+      byPath.set(key, entry);
+    }
+  }
+  return [...byPath.values()];
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return null;
+  }
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds} с`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} мин ${seconds % 60} с`;
+}
+
+function shortCommand(command) {
+  const text = String(command ?? "").replace(/^\/bin\/(?:ba|z)?sh -lc /, "").replace(/^(['"])(.*)\1$/s, "$2");
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > 80 ? `${oneLine.slice(0, 77)}...` : oneLine;
+}
+
+/**
+ * Markdown card for a finished Codex task: status line, Codex's own answer, files changed,
+ * commands run, reasoning summary and where to open the thread. Set
+ * CODEX_COMPANION_PLAIN_OUTPUT=1 for the bare final message instead.
+ */
+export function renderTaskResult(parsedResult, meta = {}) {
+  if (process.env.CODEX_COMPANION_PLAIN_OUTPUT === "1") {
+    return renderPlainTaskResult(parsedResult);
+  }
+  const rawOutput = typeof parsedResult?.rawOutput === "string" ? parsedResult.rawOutput.trim() : "";
+  const failed = meta.status != null ? meta.status !== 0 : !rawOutput;
+  const files = summarizeFileChanges(meta.fileChanges, meta.workspaceRoot);
+  const commands = (meta.commandExecutions ?? []).filter((item) => item?.command);
+  const duration = formatDuration(meta.durationMs);
+
+  const head = [failed ? "❌ **Codex: задача не выполнена**" : "✅ **Codex: готово**"];
+  if (meta.threadName) {
+    head.push(`«${meta.threadName.replace(/^Claude → Codex:\s*/, "")}»`);
+  }
+  if (duration) {
+    head.push(duration);
+  }
+  const lines = [head.join(" · "), ""];
+
+  if (rawOutput) {
+    lines.push(rawOutput, "");
+  } else {
+    const message = String(parsedResult?.failureMessage ?? "").trim() || "Codex did not return a final message.";
+    lines.push(`> ${message.split("\n").join("\n> ")}`, "");
+  }
+
+  lines.push("---", "");
+  if (files.length) {
+    const added = files.reduce((sum, file) => sum + file.added, 0);
+    const removed = files.reduce((sum, file) => sum + file.removed, 0);
+    lines.push(`**Изменённые файлы (${files.length})** · +${added} −${removed}`);
+    for (const file of files.slice(0, 15)) {
+      const mark = file.kind === "add" ? "🆕 " : file.kind === "delete" ? "🗑 " : "";
+      lines.push(`- ${mark}\`${file.path}\` +${file.added} −${file.removed}`);
+    }
+    if (files.length > 15) {
+      lines.push(`- …и ещё ${files.length - 15}`);
+    }
+  } else {
+    lines.push(meta.write ? "**Файлы не менялись.**" : "**Только чтение:** файлы не менялись.");
+  }
+
+  if (commands.length) {
+    const failedCommands = commands.filter((item) => item.exitCode != null && item.exitCode !== 0);
+    lines.push("", `**Команды (${commands.length})** · ✓ ${commands.length - failedCommands.length} · ✗ ${failedCommands.length}`);
+    const shown = [...failedCommands, ...commands.filter((item) => !failedCommands.includes(item))].slice(0, 6);
+    for (const item of shown) {
+      const ok = item.exitCode == null || item.exitCode === 0;
+      lines.push(`- ${ok ? "✓" : "✗"} \`${shortCommand(item.command)}\`${ok ? "" : ` (exit ${item.exitCode})`}`);
+    }
+    if (commands.length > shown.length) {
+      lines.push(`- …и ещё ${commands.length - shown.length}`);
+    }
+  }
+
+  const reasoning = Array.isArray(parsedResult?.reasoningSummary) ? parsedResult.reasoningSummary : [];
+  if (reasoning.length) {
+    lines.push("", "**Как рассуждал (кратко)**");
+    for (const section of reasoning.slice(0, 5)) {
+      lines.push(`- ${String(section).replace(/\s+/g, " ").trim()}`);
+    }
+  }
+
+  if (meta.threadId) {
+    lines.push("", `Тред в Codex: \`${meta.threadId}\`${meta.projectHint ? ` · ${meta.projectHint}` : ""}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 export function renderStatusReport(report) {
@@ -396,6 +534,13 @@ export function renderStoredJobResult(job, storedJob) {
       return output;
     }
     return `${output}\nCodex session ID: ${threadId}\nResume in Codex: ${resumeCommand}\n`;
+  }
+
+  // Finished tasks keep their rendered card; show it unless plain output was asked for.
+  const isCard = typeof storedJob?.rendered === "string" && /^(?:✅|❌|⚠️|⏹)[^\n]*\*\*Codex/u.test(storedJob.rendered);
+  if (isCard && process.env.CODEX_COMPANION_PLAIN_OUTPUT !== "1") {
+    const output = storedJob.rendered.endsWith("\n") ? storedJob.rendered : `${storedJob.rendered}\n`;
+    return resumeCommand ? `${output}\nПродолжить в терминале: \`${resumeCommand}\`\n` : output;
   }
 
   const rawOutput =

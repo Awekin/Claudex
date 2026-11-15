@@ -653,6 +653,8 @@ export function buildEnv(binDir) {
   const sep = process.platform === "win32" ? ";" : ":";
   return {
     ...process.env,
+    // Existing tests assert the bare Codex message; the fork's card is covered in render tests.
+    CODEX_COMPANION_PLAIN_OUTPUT: "1",
     PATH: `${binDir}${sep}${process.env.PATH}`
   };
 }

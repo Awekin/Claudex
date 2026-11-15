@@ -8,6 +8,7 @@
  * @typedef {import("./app-server-protocol").InitializeCapabilities} InitializeCapabilities
  */
 import fs from "node:fs";
+import { resolveCodexBinary } from "./codex-binary.mjs";
 import net from "node:net";
 import process from "node:process";
 import { spawn } from "node:child_process";
@@ -31,7 +32,8 @@ const DEFAULT_CLIENT_INFO = {
 
 /** @type {InitializeCapabilities} */
 const DEFAULT_CAPABILITIES = {
-  experimentalApi: false,
+  // Needed for project/list and thread projectId, so threads land in the Codex App project sidebar.
+  experimentalApi: true,
   requestAttestation: false,
   optOutNotificationMethods: [
     "item/agentMessage/delta",
@@ -187,7 +189,7 @@ class SpawnedCodexAppServerClient extends AppServerClientBase {
   }
 
   async initialize() {
-    this.proc = spawn("codex", ["app-server"], {
+    this.proc = spawn(resolveCodexBinary(), ["app-server"], {
       cwd: this.cwd,
       env: this.options.env ?? process.env,
       stdio: ["pipe", "pipe", "pipe"],

@@ -35,6 +35,7 @@
  * }} TurnCaptureState
  */
 import crypto from "node:crypto";
+import { resolveCodexBinary } from "./codex-binary.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,7 +46,7 @@ import { loadBrokerSession } from "./broker-lifecycle.mjs";
 import { binaryAvailable } from "./process.mjs";
 
 const SERVICE_NAME = "claude_code_codex_plugin";
-const TASK_THREAD_PREFIX = "Codex Companion Task";
+const TASK_THREAD_PREFIX = "Claude → Codex";
 const DEFAULT_CONTINUE_PROMPT =
   "Continue from the current thread state. Pick the next highest-value step and follow through until the task is resolved.";
 const EXTERNAL_AGENT_IMPORT_COMPLETED = "externalAgentConfig/import/completed";
@@ -67,7 +68,10 @@ function buildThreadParams(cwd, options = {}) {
     approvalPolicy: options.approvalPolicy ?? "never",
     sandbox: options.sandbox ?? "read-only",
     serviceName: SERVICE_NAME,
-    ephemeral: options.ephemeral ?? true
+    ephemeral: options.ephemeral ?? true,
+    // Same thread source the Codex App uses for its own chats, so the sidebar treats them alike.
+    threadSource: "user",
+    ...(options.projectId ? { projectId: options.projectId } : {})
   };
 }
 
@@ -729,9 +733,93 @@ async function requestExternalAgentSessionImport(client, params) {
   }
 }
 
+function isUnsupportedRequestError(err) {
+  const msg = String(err?.message ?? err ?? "");
+  return /unknown variant|unknown method|unsupported method|unknown field|method not found|experimental|-32601|-32602/i.test(msg);
+}
+
+function isPathInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function realpathOrSelf(value) {
+  try {
+    return fs.realpathSync(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Finds the Codex App project whose root contains `cwd` (deepest root wins), so threads
+ * started from Claude Code show up under that project in the Codex App sidebar.
+ * Returns null when there is no matching project or the CLI has no project API.
+ */
+export async function findCodexProjectForPath(client, cwd) {
+  if (!cwd || process.env.CODEX_COMPANION_NO_PROJECT === "1") {
+    return null;
+  }
+  const target = realpathOrSelf(path.resolve(cwd));
+  let best = null;
+  let bestLength = -1;
+  let cursor = null;
+  try {
+    do {
+      const response = await client.request("project/list", { cursor, limit: 100 });
+      for (const project of response?.data ?? []) {
+        for (const root of project.roots ?? []) {
+          const rootPath = typeof root === "string" ? root : root?.path;
+          if (!rootPath) {
+            continue;
+          }
+          const resolvedRoot = realpathOrSelf(path.resolve(rootPath));
+          if (isPathInside(resolvedRoot, target) && resolvedRoot.length > bestLength) {
+            best = project;
+            bestLength = resolvedRoot.length;
+          }
+        }
+      }
+      cursor = response?.nextCursor ?? null;
+    } while (cursor);
+  } catch (err) {
+    if (isUnsupportedRequestError(err)) {
+      return null;
+    }
+    throw err;
+  }
+  return best ? { id: best.id, name: best.name } : null;
+}
+
+async function assignThreadToProject(client, threadId, projectId) {
+  if (!projectId) {
+    return;
+  }
+  try {
+    await client.request("thread/metadata/update", { threadId, projectId });
+  } catch (err) {
+    if (!isUnsupportedRequestError(err)) {
+      throw err;
+    }
+  }
+}
+
 async function startThread(client, cwd, options = {}) {
-  const response = await client.request("thread/start", buildThreadParams(cwd, options));
+  const project = options.ephemeral === false ? await findCodexProjectForPath(client, cwd) : null;
+  let response;
+  try {
+    response = await client.request("thread/start", buildThreadParams(cwd, { ...options, projectId: project?.id }));
+  } catch (err) {
+    if (!project || !isUnsupportedRequestError(err)) {
+      throw err;
+    }
+    // Older CLI without projectId on thread/start: start plainly and assign afterwards.
+    response = await client.request("thread/start", buildThreadParams(cwd, options));
+  }
   const threadId = response.thread.id;
+  if (project && response.thread?.projectId !== project.id) {
+    await assignThreadToProject(client, threadId, project.id);
+  }
   if (options.threadName) {
     try {
       await client.request("thread/name/set", { threadId, name: options.threadName });
@@ -748,7 +836,15 @@ async function startThread(client, cwd, options = {}) {
 }
 
 async function resumeThread(client, threadId, cwd, options = {}) {
-  return client.request("thread/resume", buildResumeParams(threadId, cwd, options));
+  const response = await client.request("thread/resume", buildResumeParams(threadId, cwd, options));
+  // Threads created before this fork (or outside a project) get attached to the project on resume.
+  if (!response?.thread?.projectId) {
+    const project = await findCodexProjectForPath(client, cwd);
+    if (project) {
+      await assignThreadToProject(client, threadId, project.id);
+    }
+  }
+  return response;
 }
 
 function buildResultStatus(turnState) {
@@ -884,12 +980,12 @@ async function getCodexAuthStatusFromClient(client, cwd) {
 }
 
 export function getCodexAvailability(cwd) {
-  const versionStatus = binaryAvailable("codex", ["--version"], { cwd });
+  const versionStatus = binaryAvailable(resolveCodexBinary(), ["--version"], { cwd });
   if (!versionStatus.available) {
     return versionStatus;
   }
 
-  const appServerStatus = binaryAvailable("codex", ["app-server", "--help"], { cwd });
+  const appServerStatus = binaryAvailable(resolveCodexBinary(), ["app-server", "--help"], { cwd });
   if (!appServerStatus.available) {
     return {
       available: false,
@@ -1010,7 +1106,7 @@ export async function runAppServerReview(cwd, options = {}) {
     const thread = await startThread(client, cwd, {
       model: options.model,
       sandbox: "read-only",
-      ephemeral: true,
+      ephemeral: options.ephemeral ?? false,
       threadName: options.threadName
     });
     const sourceThreadId = thread.thread.id;
@@ -1114,8 +1210,8 @@ export async function runAppServerTurn(cwd, options = {}) {
       const response = await startThread(client, cwd, {
         model: options.model,
         sandbox: options.sandbox,
-        ephemeral: options.persistThread ? false : true,
-        threadName: options.persistThread ? options.threadName : options.threadName ?? null
+        ephemeral: options.persistThread === false,
+        threadName: options.threadName ?? null
       });
       threadId = response.thread.id;
     }
