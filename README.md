@@ -2,9 +2,9 @@
 
 # Claudex
 
-**Codex внутри Claude Code: общий контекст, треды в нужном проекте Codex App, карточки ответов и живая панель прогресса.**
+**Codex и Antigravity внутри Claude Code: общий контекст, треды в нужном проекте Codex App, модели Antigravity с автовыбором, карточки ответов и живая панель прогресса.**
 
-*Hand tasks from Claude Code to Codex — with shared context, Codex App project threads and a live progress panel.*
+*Hand tasks from Claude Code to Codex and Antigravity models — with shared context, Codex App project threads, automatic model choice and a live progress panel.*
 
 [![Based on openai/codex-plugin-cc](https://img.shields.io/badge/based%20on-openai%2Fcodex--plugin--cc-black?logo=github)](https://github.com/openai/codex-plugin-cc)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -29,6 +29,7 @@
 | **Ответ** | Голый текст | Карточка: статус, время, изменённые файлы `+/−`, команды, краткие рассуждения |
 | **Ход работы** | Только `/codex:status` | **Панель Codex** сбоку от чата обновляется в реальном времени |
 | **Установка Codex** | Нужен `codex` в `PATH` | Подхватывает CLI из ChatGPT.app или Codex.app |
+| **Другие модели** | Только Codex | Плагин `antigravity`: Gemini 4 Hydrogen/Argon, Gemini Flash, Claude Opus/Sonnet из вашей подписки Google |
 
 ### 🧠 Общий контекст
 
@@ -66,6 +67,18 @@
   Outputs · задача · правит · 14 мин 15 с · 2 мин назад
 ```
 
+### 🚀 Antigravity: модели Google в Claude Code
+
+Плагин `antigravity` отдаёт задачи агенту из запущенного приложения [Antigravity](https://antigravity.google): он правит файлы проекта, запускает команды и отвечает карточкой, как Codex.
+
+- **Модели:** Gemini 4 Hydrogen (Low → XHigh), Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5 / Sonnet 5.5, GPT-OSS. Набор зависит от вашей подписки, список и остаток квоты показывает `/antigravity:models`.
+- **Автовыбор:** Claude сам выбирает модель под задачу: Flash для мелочей, Hydrogen для обычной работы, Hydrogen High/XHigh для сложного, Argon или Opus/Sonnet для второго мнения. Если квота кончилась, плагин переключится на следующую модель и скажет об этом.
+- **Память:** задачи из одного чата Claude идут в один разговор Antigravity, его видно в самом приложении.
+- **Панель:** задачи Antigravity показываются в той же боковой панели, с меткой модели.
+
+> [!WARNING]
+> Плагин работает через локальный внутренний интерфейс Antigravity, а не через официальный API. Antigravity должен быть запущен; обновление Antigravity может сломать интеграцию.
+
 ### 🃏 Карточка ответа
 
 ```
@@ -88,6 +101,7 @@
 - [Claude Code](https://claude.com/claude-code): приложение Claude (вкладка Code) или CLI.
 - Codex: ChatGPT.app с Codex, Codex.app или CLI `codex` (`npm install -g @openai/codex`) с выполненным входом в аккаунт OpenAI.
 - Node.js 18.18+.
+- Для плагина `antigravity`: установленное и запущенное приложение Antigravity с выполненным входом.
 - Панель `codex-panel` работает в приложении Claude (вкладка Code); в терминальном CLI остаются карточки и `/codex:status`.
 
 **В терминале:**
@@ -97,7 +111,7 @@ claude plugin marketplace add Awekin/Claudex
 ```
 
 ```bash
-claude plugin install codex@claudex codex-panel@claudex
+claude plugin install codex@claudex codex-panel@claudex antigravity@claudex
 ```
 
 Или прямо в чате Claude Code:
@@ -106,6 +120,7 @@ claude plugin install codex@claudex codex-panel@claudex
 /plugin marketplace add Awekin/Claudex
 /plugin install codex@claudex
 /plugin install codex-panel@claudex
+/plugin install antigravity@claudex
 /reload-plugins
 ```
 
@@ -129,11 +144,14 @@ claude plugin install codex@claudex codex-panel@claudex
 | `/codex:review` | Ревью текущих изменений |
 | `/codex:adversarial-review` | Придирчивое ревью с фокусом на рисках |
 | `/codex:status` · `/codex:result` · `/codex:cancel` | Управление фоновыми задачами |
-| `/codex-panel` | Открыть панель Codex |
+| `/codex-panel` | Открыть панель Codex · Antigravity |
+| `/antigravity:task [--model hydrogen-high] <задача>` | Отдать задачу Antigravity (модель Claude выберет сам, если не указана) |
+| `/antigravity:models` | Модели Antigravity и остаток квоты |
+| `/antigravity:status` · `/antigravity:result` | Ход и результат задач Antigravity |
 
 Флаги `rescue`: `--write` (разрешить правки), `--no-context` (не передавать переписку), `--model`, `--effort`.
 
-Claude знает о плагине сам: достаточно написать «отдай это Codex» или «пусть Codex посмотрит».
+Claude знает о плагинах сам: достаточно написать «отдай это Codex» или «пусть Antigravity посмотрит».
 
 Полное описание команд оригинала: [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).
 
@@ -145,11 +163,13 @@ Claude знает о плагине сам: достаточно написат�
 | `CODEX_COMPANION_NO_PROJECT=1` | Не привязывать треды к проектам Codex App |
 | `CODEX_COMPANION_CODEX_BIN=/путь/к/codex` | Свой путь к Codex CLI |
 | `CODEX_COMPANION_PLAIN_OUTPUT=1` | Голый текст ответа вместо карточки |
+| `ANTIGRAVITY_LS_ADDRESS`, `ANTIGRAVITY_CSRF_TOKEN` | Указать сервер Antigravity вручную, если автопоиск не сработал |
+| `ANTIGRAVITY_COMPANION_NO_CLAUDE_CONTEXT=1` | Не передавать переписку из Claude в Antigravity |
 
 ---
 
 ## Лицензия и авторство
 
 - Основа: [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc), © OpenAI, [Apache-2.0](LICENSE). См. также [NOTICE](NOTICE).
-- Изменения Claudex (общий контекст, треды в проектах Codex App, карточки ответов, плагин `codex-panel`) распространяются под той же лицензией.
-- Claudex — независимый проект и не связан с OpenAI или Anthropic.
+- Изменения Claudex (общий контекст, треды в проектах Codex App, карточки ответов, плагины `codex-panel` и `antigravity`) распространяются под той же лицензией.
+- Claudex — независимый проект и не связан с OpenAI, Google или Anthropic.

@@ -4,13 +4,13 @@ import type { Register } from 'claude-code'
 import type { ActivityRow, PanelJob, Snapshot } from '../types'
 
 const PANE = 'codex-panel'
-const TITLE = 'Codex'
+const TITLE = 'Codex · Antigravity'
 const POLL_MS = 2000
 const MAX_JOBS = 10
 const MAX_OUTPUT = 8000
 
 // Bump the shape tag when PanelJob changes: a value an older version stored is then dropped.
-const snapshot = atom({ plugin: 'codex-panel', key: 'snapshot' } as const, { now: 0, jobs: [] }, { shape: 'snapshot-2' })
+const snapshot = atom({ plugin: 'codex-panel', key: 'snapshot' } as const, { now: 0, jobs: [] }, { shape: 'snapshot-3' })
 const expanded = atom({ plugin: 'codex-panel', key: 'expanded' } as const, [], { shape: 'expanded-1' })
 
 type RawJob = Record<string, unknown>
@@ -136,6 +136,7 @@ function phaseLabel(job: PanelJob): string {
 function kindLabel(kind: string): string {
   if (kind === 'review') return 'ревью'
   if (kind === 'adversarial-review') return 'жёсткое ревью'
+  if (kind === 'antigravity') return 'Antigravity'
   return 'задача'
 }
 
@@ -182,7 +183,7 @@ async function collect($: any): Promise<PanelJob[]> {
   const dataRoot = `${home}/.claude/plugins/data`
   let pluginDirs: { name: string; kind: string }[] = []
   try {
-    pluginDirs = (await $.fs.list(dataRoot)).filter((d: any) => d.kind === 'dir' && d.name.startsWith('codex-'))
+    pluginDirs = (await $.fs.list(dataRoot)).filter((d: any) => d.kind === 'dir' && (d.name.startsWith('codex-') || d.name.startsWith('antigravity-')))
   } catch {
     return []
   }
@@ -223,6 +224,7 @@ async function collect($: any): Promise<PanelJob[]> {
       title: str(raw.title) || 'Codex',
       summary: cleanSummary(str(raw.summary)),
       kind: str(raw.kind) || 'task',
+      model: str(raw.modelLabel),
       status,
       phase: str(raw.phase),
       write: raw.write === true,
@@ -379,7 +381,7 @@ export const register: Register = on => {
     const meta = (job: PanelJob) =>
       [
         job.project,
-        kindLabel(job.kind) + (job.kind === 'task' ? (job.write ? ' · правит' : ' · чтение') : ''),
+        kindLabel(job.kind) + (job.model ? ` · ${job.model}` : '') + (job.kind === 'task' || job.kind === 'antigravity' ? (job.write ? ' · правит' : ' · чтение') : ''),
       ].join(' · ')
 
     const stats = (job: PanelJob) =>
@@ -466,7 +468,7 @@ export const register: Register = on => {
                 {elapsedOf(job)}
               </Text>
             </Box>
-            {job.kind === 'task' && Steps(job)}
+            {(job.kind === 'task' || job.kind === 'antigravity') && Steps(job)}
             {job.activity.length > 0 ? Activity(job) : <Text dimColor>Codex начинает работу…</Text>}
             {stats(job) && (
               <Text dimColor size="caption">

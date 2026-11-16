@@ -1,0 +1,210 @@
+{
+ "trajectory": {
+  "trajectoryId": "c8f48e06-7ccb-42e4-8d33-d789c3d31827",
+  "cascadeId": "0422e2a5-667e-4696-851b-6bee5cf9079b",
+  "steps": [
+   {
+    "type": "CORTEX_STEP_TYPE_USER_INPUT",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "userInput": {
+     "items": [
+      {
+       "text": "In the workspace folder create hello.txt containing the word HYDROGEN, then run the shell command: ls -la. Report the output briefly."
+      }
+     ],
+     "userResponse": "In the workspace folder create hello.txt containing the word HYDROGEN, then run the shell command: ls -la. Report the output briefly.",
+     "activeUserState": {},
+     "userConfig": {
+      "plannerConfig": {
+       "conversational": {},
+       "planModel": "MODEL_PLACEHOLDER_M527"
+      }
+     }
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:47.966825Z",
+     "source": "CORTEX_STEP_SOURCE_USER_EXPLICIT"
+    }
+   },
+   {
+    "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "plannerResponse": {
+     "thinking": "Created `hello.txt` with the specified content. Executing the directory listing command to verify file creation and check permissions. Now inspecting the output to confirm the presence and attributes of `hello.txt`.\n\n\n",
+     "messageId": "bot-ff2202c2-fb69-4d75-8132-74c7965c7e9f",
+     "toolCalls": [
+      {
+       "id": "call_17196074217433736232",
+       "name": "write_file",
+       "argumentsJson": "{\"Content\":\"HYDROGEN\\n\",\"Overwrite\":true,\"Path\":\"/tmp/ag-probe/hello.txt\"}"
+      }
+     ],
+     "thinkingDuration": "2.955494s",
+     "stopReason": "STOP_REASON_STOP_PATTERN"
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:48.176542Z",
+     "completedAt": "2026-11-16T19:02:51.187864Z",
+     "source": "CORTEX_STEP_SOURCE_MODEL",
+     "modelUsage": {
+      "model": "MODEL_PLACEHOLDER_M527",
+      "inputTokens": "14290",
+      "outputTokens": "399",
+      "thinkingOutputTokens": "205",
+      "responseOutputTokens": "194",
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "messageId": "bot-ff2202c2-fb69-4d75-8132-74c7965c7e9f",
+      "responseHeader": {
+       "sessionID": "-3750763034362895579"
+      },
+      "responseId": "WVP7auLnAf-7xN8P2OioyA0"
+     }
+    }
+   },
+   {
+    "type": "CORTEX_STEP_TYPE_CODE_ACTION",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "codeAction": {
+     "actionSpec": {
+      "createFile": {
+       "path": {
+        "absoluteUri": "file:///tmp/ag-probe/hello.txt"
+       }
+      }
+     },
+     "actionResult": {
+      "edit": {
+       "diff": {
+        "unifiedDiff": {
+         "lines": [
+          {
+           "text": "HYDROGEN",
+           "type": "UNIFIED_DIFF_LINE_TYPE_INSERT"
+          },
+          {
+           "type": "UNIFIED_DIFF_LINE_TYPE_INSERT"
+          }
+         ]
+        }
+       },
+       "absoluteUri": "file:///tmp/ag-probe/hello.txt",
+       "createFile": true
+      }
+     },
+     "diffStats": {
+      "additions": 2
+     }
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:51.132043Z",
+     "completedAt": "2026-11-16T19:02:52.848663Z",
+     "source": "CORTEX_STEP_SOURCE_MODEL"
+    }
+   },
+   {
+    "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "plannerResponse": {
+     "messageId": "bot-b00911ac-fe41-4248-b905-260c7e4cb955",
+     "toolCalls": [
+      {
+       "id": "call_84100115440590524",
+       "name": "run_command",
+       "argumentsJson": "{\"CommandLine\":\"ls -la\",\"WaitMsBeforeAsync\":5000,\"toolSummary\":\"List workspace directory contents\"}"
+      }
+     ],
+     "stopReason": "STOP_REASON_STOP_PATTERN"
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:53.028450Z",
+     "completedAt": "2026-11-16T19:02:55.947852Z",
+     "source": "CORTEX_STEP_SOURCE_MODEL",
+     "modelUsage": {
+      "model": "MODEL_PLACEHOLDER_M527",
+      "inputTokens": "2533",
+      "outputTokens": "60",
+      "thinkingOutputTokens": "15",
+      "responseOutputTokens": "45",
+      "cacheReadTokens": "12236",
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "messageId": "bot-b00911ac-fe41-4248-b905-260c7e4cb955",
+      "responseHeader": {
+       "sessionID": "-3750763034362895579"
+      },
+      "responseId": "XVP7apHhKcizkdUP7b3dkQg"
+     }
+    }
+   },
+   {
+    "type": "CORTEX_STEP_TYPE_RUN_COMMAND",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "runCommand": {
+     "commandLine": "ls -la",
+     "proposedCommandLine": "ls -la",
+     "cwd": "/tmp/ag-probe",
+     "waitMsBeforeAsync": "5000",
+     "blocking": true,
+     "exitCode": 0,
+     "combinedOutput": {
+      "full": "Created At: 2026-11-16T20:02:55+01:00\nCompleted At: 2026-11-16T20:02:56+01:00\nCommand exited with code 0.\n\nCommand output:\ntotal 8\r\ndrwxr-xr-x@  3 me  wheel   96 Nov 16 20:02 .\r\ndrwx------@ 11 me  wheel  352 Nov 16 20:02 ..\r\n-rw-r--r--@  1 me  wheel    9 Nov 16 20:02 hello.txt\r\n"
+     },
+     "shellName": "zsh",
+     "ranInSandbox": true
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:55.870440Z",
+     "completedAt": "2026-11-16T19:02:56.204116Z",
+     "source": "CORTEX_STEP_SOURCE_MODEL"
+    }
+   },
+   {
+    "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
+    "status": "CORTEX_STEP_STATUS_DONE",
+    "plannerResponse": {
+     "response": "Created [hello.txt](file:///tmp/ag-probe/hello.txt) containing `HYDROGEN`.\n\n`ls -la` output:\n```\ntotal 8\ndrwxr-xr-x@  3 me  wheel   96 Nov 16 20:02 .\ndrwx------@ 11 me  wheel  352 Nov 16 20:02 ..\n-rw-r--r--@  1 me  wheel    9 Nov 16 20:02 hello.txt\n```",
+     "modifiedResponse": "Created [hello.txt](file:///tmp/ag-probe/hello.txt) containing `HYDROGEN`.\n\n`ls -la` output:\n```\ntotal 8\ndrwxr-xr-x@  3 me  wheel   96 Nov 16 20:02 .\ndrwx------@ 11 me  wheel  352 Nov 16 20:02 ..\n-rw-r--r--@  1 me  wheel    9 Nov 16 20:02 hello.txt\n```",
+     "messageId": "bot-4e58ab2f-34e9-45dd-8c2b-848f24a63531",
+     "stopReason": "STOP_REASON_STOP_PATTERN"
+    },
+    "metadata": {
+     "createdAt": "2026-11-16T19:02:56.376937Z",
+     "completedAt": "2026-11-16T19:02:59.453836Z",
+     "source": "CORTEX_STEP_SOURCE_MODEL",
+     "modelUsage": {
+      "model": "MODEL_PLACEHOLDER_M527",
+      "inputTokens": "2286",
+      "outputTokens": "299",
+      "thinkingOutputTokens": "21",
+      "responseOutputTokens": "278",
+      "cacheReadTokens": "12720",
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "messageId": "bot-4e58ab2f-34e9-45dd-8c2b-848f24a63531",
+      "responseHeader": {
+       "sessionID": "-3750763034362895579"
+      },
+      "responseId": "YVP7av7mEt3S28oP17nOqAo"
+     }
+    }
+   }
+  ],
+  "generatorMetadata": [
+   {
+    "chatModel": {
+     "model": "MODEL_PLACEHOLDER_M527"
+    }
+   },
+   {
+    "chatModel": {
+     "model": "MODEL_PLACEHOLDER_M527"
+    }
+   },
+   {
+    "chatModel": {
+     "model": "MODEL_PLACEHOLDER_M527"
+    }
+   }
+  ]
+ },
+ "status": "CASCADE_RUN_STATUS_IDLE",
+ "numTotalSteps": 6
+}

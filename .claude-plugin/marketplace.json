@@ -5,7 +5,7 @@
     "url": "https://github.com/Awekin"
   },
   "metadata": {
-    "description": "Claudex: Codex inside Claude Code. Fork of openai/codex-plugin-cc with shared context, Codex App project threads, result cards and a live Codex panel.",
+    "description": "Claudex: Codex and Antigravity inside Claude Code. Fork of openai/codex-plugin-cc with shared context, Codex App project threads, result cards, Antigravity models and a live agents panel.",
     "version": "1.0.6"
   },
   "plugins": [
@@ -26,6 +26,15 @@
         "name": "Awekin"
       },
       "source": "./plugins/codex-panel"
+    },
+    {
+      "name": "antigravity",
+      "description": "Delegate coding tasks to Antigravity models (Gemini 4 Hydrogen/Argon, Flash, Claude Opus/Sonnet) from Claude Code.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Awekin"
+      },
+      "source": "./plugins/antigravity"
     }
   ]
 }

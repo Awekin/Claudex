@@ -13,6 +13,8 @@ export type PanelJob = {
   title: string
   summary: string
   kind: string
+  /** Model label for Antigravity jobs, empty for Codex. */
+  model: string
   status: string
   phase: string
   write: boolean
