@@ -12,6 +12,7 @@ import {
     DEFAULT_CONTINUE_PROMPT,
     findLatestTaskThread,
     getCodexAuthStatus,
+    getCodexRateLimits,
     getCodexAvailability,
     getSessionRuntimeStatus,
     importExternalAgentSession,
@@ -62,7 +63,8 @@ import {
   renderJobStatusReport,
   renderSetupReport,
   renderStatusReport,
-  renderTaskResult
+  renderTaskResult,
+  formatRateLimits
 } from "./lib/render.mjs";
 
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -544,7 +546,8 @@ async function executeTaskRun(request) {
       workspaceRoot,
       fileChanges: result.fileChanges,
       commandExecutions: result.commandExecutions,
-      durationMs: Date.now() - taskStartedAt
+      durationMs: Date.now() - taskStartedAt,
+      rateLimits: result.rateLimits ?? null
     }
   );
   const payload = {
@@ -1094,6 +1097,12 @@ async function main() {
     case "task-worker":
       await handleTaskWorker(argv);
       break;
+    case "limits": {
+      const limits = await getCodexRateLimits(process.cwd());
+      if (argv.includes("--json")) process.stdout.write(`${JSON.stringify(limits, null, 2)}\n`);
+      else process.stdout.write(`${formatRateLimits(limits) || "Codex не отдал данные о лимитах."}\n`);
+      break;
+    }
     case "status":
       await handleStatus(argv);
       break;

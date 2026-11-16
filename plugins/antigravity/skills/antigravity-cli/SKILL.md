@@ -30,4 +30,8 @@ Choosing the model yourself (default `hydrogen`):
 - second Gemini opinion or Hydrogen exhausted → `argon`
 - Claude-family second opinion → `opus` (hard) / `sonnet` (normal); small quota
 
+Quota: the first line of every result card shows the model's quota before → after the task.
+Before `opus`, `sonnet` or `hydrogen-xhigh` (and before the first task of a session) run `models`;
+below ~10% pick another model.
+
 After a task that changed files, look at `git diff` before telling the user it is done.

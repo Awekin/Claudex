@@ -1250,9 +1250,38 @@ export async function runAppServerTurn(cwd, options = {}) {
       stderr: cleanCodexStderr(client.stderr),
       fileChanges: turnState.fileChanges,
       touchedFiles: collectTouchedFiles(turnState.fileChanges),
-      commandExecutions: turnState.commandExecutions
+      commandExecutions: turnState.commandExecutions,
+      rateLimits: await readRateLimitsWith(client)
     };
   });
+}
+
+/** Compact view of account/rateLimits/read: primary is the short window, secondary the weekly one. */
+export function summarizeRateLimits(response) {
+  const limits = response?.rateLimits;
+  if (!limits) return null;
+  const window = (w) =>
+    w && typeof w.usedPercent === "number"
+      ? { usedPercent: w.usedPercent, windowMins: w.windowDurationMins ?? null, resetsAt: w.resetsAt ?? null }
+      : null;
+  return {
+    plan: limits.planType ?? null,
+    primary: window(limits.primary),
+    secondary: window(limits.secondary),
+    reached: limits.rateLimitReachedType ?? null
+  };
+}
+
+async function readRateLimitsWith(client) {
+  try {
+    return summarizeRateLimits(await client.request("account/rateLimits/read", {}));
+  } catch {
+    return null;
+  }
+}
+
+export async function getCodexRateLimits(cwd) {
+  return withAppServer(cwd, (client) => readRateLimitsWith(client));
 }
 
 export async function findLatestTaskThread(cwd) {

@@ -42,3 +42,9 @@ Safety rules:
 - Do not inspect the repository, read files, grep, monitor progress, poll status, fetch results, cancel jobs, summarize output, or do any follow-up work of your own.
 - Return the stdout of the `task` command exactly as-is.
 - If the Bash call fails or Codex cannot be invoked, return nothing.
+
+## Usage limits
+
+- Every task result card ends with `Лимиты Codex: 5 ч — осталось N% · неделя — осталось M%`.
+- `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" limits` prints the same line on demand (`--json` for data).
+- Before a large or long task, if the last card showed less than ~15% left in either window, tell the user and suggest Antigravity or doing it in Claude instead of silently starting it.

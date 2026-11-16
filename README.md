@@ -72,7 +72,7 @@
 Плагин `antigravity` отдаёт задачи агенту из запущенного приложения [Antigravity](https://antigravity.google): он правит файлы проекта, запускает команды и отвечает карточкой, как Codex.
 
 - **Модели:** Gemini 4 Hydrogen (Low → XHigh), Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5 / Sonnet 5.5, GPT-OSS. Набор зависит от вашей подписки, список и остаток квоты показывает `/antigravity:models`.
-- **Автовыбор:** Claude сам выбирает модель под задачу: Flash для мелочей, Hydrogen для обычной работы, Hydrogen High/XHigh для сложного, Argon или Opus/Sonnet для второго мнения. Если квота кончилась, плагин переключится на следующую модель и скажет об этом.
+- **Автовыбор:** Claude сам выбирает модель под задачу: Flash для мелочей, Hydrogen для обычной работы, Hydrogen High/XHigh для сложного, Argon или Opus/Sonnet для второго мнения. Перед дорогими моделями Claude смотрит квоту, а карточка ответа показывает квоту модели до и после задачи. Если квота кончилась, плагин переключится на следующую модель и скажет об этом.
 - **Память:** задачи из одного чата Claude идут в один разговор Antigravity, его видно в самом приложении.
 - **Панель:** задачи Antigravity показываются в той же боковой панели, с меткой модели.
 
@@ -89,6 +89,7 @@
 Изменённые файлы (3) · +67 −9
 Команды: ✓ npm test   ✗ npm run lint
 Как рассуждал (кратко): …
+Лимиты Codex: 5 ч — осталось 94% (сброс в 22:21) · неделя — осталось 72%
 Тред в Codex: 01a1…
 ```
 
@@ -144,6 +145,7 @@ claude plugin install codex@claudex codex-panel@claudex antigravity@claudex
 | `/codex:review` | Ревью текущих изменений |
 | `/codex:adversarial-review` | Придирчивое ревью с фокусом на рисках |
 | `/codex:status` · `/codex:result` · `/codex:cancel` | Управление фоновыми задачами |
+| `/codex:limits` | Сколько осталось лимитов Codex: окно 5 ч и неделя |
 | `/codex-panel` | Открыть панель Codex · Antigravity |
 | `/antigravity:task [--model hydrogen-high] <задача>` | Отдать задачу Antigravity (модель Claude выберет сам, если не указана) |
 | `/antigravity:models` | Модели Antigravity и остаток квоты |

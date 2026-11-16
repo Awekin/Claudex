@@ -50,3 +50,18 @@ test("plain output mode keeps the bare message", () => {
     delete process.env.CODEX_COMPANION_PLAIN_OUTPUT;
   }
 });
+
+test("rate limits render as a remaining-percent line", async () => {
+  const { formatRateLimits } = await import("../plugins/codex/scripts/lib/render.mjs");
+  const now = Date.UTC(2026, 10, 16, 12, 0);
+  const line = formatRateLimits(
+    {
+      primary: { usedPercent: 6, windowMins: 300, resetsAt: now / 1000 + 3600 },
+      secondary: { usedPercent: 28, windowMins: 10080, resetsAt: now / 1000 + 5 * 86400 }
+    },
+    now
+  );
+  assert.match(line, /Лимиты Codex:\*\* 5 ч — осталось 94% \(сброс в /);
+  assert.match(line, /неделя — осталось 72%/);
+  assert.equal(formatRateLimits(null), "");
+});

@@ -454,10 +454,41 @@ export function renderTaskResult(parsedResult, meta = {}) {
     }
   }
 
+  const limits = formatRateLimits(meta.rateLimits);
+  if (limits) lines.push("", limits);
   if (meta.threadId) {
     lines.push("", `Тред в Codex: \`${meta.threadId}\`${meta.projectHint ? ` · ${meta.projectHint}` : ""}`);
   }
   return `${lines.join("\n")}\n`;
+}
+
+function formatWindowName(mins) {
+  if (mins === 300) return "5 ч";
+  if (mins === 10080) return "неделя";
+  if (mins == null) return "лимит";
+  return mins % 1440 === 0 ? `${mins / 1440} дн` : mins % 60 === 0 ? `${mins / 60} ч` : `${mins} мин`;
+}
+
+function formatResetTime(resetsAt, now = Date.now()) {
+  if (!resetsAt) return "";
+  const date = new Date(resetsAt * 1000);
+  const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  if (date.getTime() - now < 24 * 3600 * 1000) return `сброс в ${time}`;
+  return `сброс ${date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} ${time}`;
+}
+
+/** "Лимиты Codex: 5 ч — осталось 94% (сброс в 14:20) · неделя — осталось 72% (…)", or "" without data. */
+export function formatRateLimits(limits, now = Date.now()) {
+  if (!limits) return "";
+  const parts = [limits.primary, limits.secondary]
+    .filter(Boolean)
+    .map((w) => {
+      const left = Math.max(0, 100 - Math.round(w.usedPercent));
+      const reset = formatResetTime(w.resetsAt, now);
+      return `${formatWindowName(w.windowMins)} — осталось ${left}%${reset ? ` (${reset})` : ""}`;
+    });
+  if (!parts.length) return "";
+  return `${limits.reached ? "⚠️ " : ""}**Лимиты Codex:** ${parts.join(" · ")}`;
 }
 
 export function renderStatusReport(report) {

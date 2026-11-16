@@ -31,6 +31,7 @@ import { buildClaudeContextPreamble } from "./lib/claude-context.mjs";
 const SCRIPT = fileURLToPath(import.meta.url);
 const MAX_JOBS = 50;
 const nowIso = () => new Date().toISOString();
+const pct = (fraction) => (typeof fraction === "number" ? `${Math.round(fraction * 100)}%` : null);
 
 // ---------- state ----------
 
@@ -138,12 +139,19 @@ function duration(ms) {
   return m < 60 ? `${m} мин ${s % 60} с` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
 }
 
+function quotaText(job) {
+  const before = pct(job.quotaBefore);
+  const after = pct(job.quotaAfter);
+  if (!before && !after) return "";
+  return ` · квота ${before && after && before !== after ? `${before} → ${after}` : after || before}`;
+}
+
 function renderCard(job, summary) {
   const ok = job.status === "completed";
   const title = job.summary.length > 60 ? `${job.summary.slice(0, 57)}…` : job.summary;
   const took = duration(Date.parse(job.completedAt) - Date.parse(job.startedAt));
   const lines = [
-    `${ok ? "✅" : "❌"} **Antigravity: ${ok ? "готово" : "ошибка"}** · «${title}» · ${job.modelLabel}${took ? ` · ${took}` : ""}`,
+    `${ok ? "✅" : "❌"} **Antigravity: ${ok ? "готово" : "ошибка"}** · «${title}» · ${job.modelLabel}${took ? ` · ${took}` : ""}${quotaText(job)}`,
     ""
   ];
   if (job.fallbackFrom) lines.push(`_${job.fallbackFrom} недоступна (квота), использована ${job.modelLabel}._`, "");
@@ -220,6 +228,12 @@ async function runJob(dir, job) {
     });
     const steps = final?.trajectory?.steps ?? [];
     const summary = summarizeTrajectory({ ...final, trajectory: { ...final.trajectory, steps: steps.slice(job.request.skipSteps ?? 0) } });
+    try {
+      const { models: after } = await listModels(server);
+      job.quotaAfter = after.find((m) => m.model === job.model)?.remaining ?? null;
+    } catch {
+      job.quotaAfter = null;
+    }
     job.status = summary.finalText ? "completed" : "failed";
     job.phase = job.status === "completed" ? "done" : "failed";
     job.completedAt = nowIso();
@@ -283,6 +297,7 @@ async function handleTask(flags, text) {
     write: !flags.readOnly,
     model: entry.model,
     modelLabel: entry.label,
+    quotaBefore: entry.remaining ?? null,
     fallbackFrom: fallbackFrom ?? null,
     workspaceRoot: root,
     sessionId,
@@ -292,7 +307,7 @@ async function handleTask(flags, text) {
     request: { prompt, skipSteps }
   };
   fs.writeFileSync(job.logFile, "");
-  log(job.logFile, `Starting Antigravity task on ${entry.label}.`);
+  log(job.logFile, `Starting Antigravity task on ${entry.label}${pct(entry.remaining) ? ` (quota ${pct(entry.remaining)})` : ""}.`);
 
   if (flags.background) {
     job.status = "queued";
@@ -306,7 +321,7 @@ async function handleTask(flags, text) {
     });
     child.unref();
     process.stdout.write(
-      `Antigravity-задача запущена в фоне: ${id} (${entry.label}${fallbackFrom ? `, вместо ${fallbackFrom}` : ""}).\n` +
+      `Antigravity-задача запущена в фоне: ${id} (${entry.label}${pct(entry.remaining) ? `, квота ${pct(entry.remaining)}` : ""}${fallbackFrom ? `, вместо ${fallbackFrom}` : ""}).\n` +
         `Проверить: /antigravity:status ${id}, результат: /antigravity:result ${id}\n`
     );
     return;
