@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// Antigravity companion: runs tasks on the local Antigravity agent from Claude Code.
+// Antigravity companion: runs tasks through the official Antigravity CLI (`agy`) from Claude Code.
 //
 //   models [--json]
-//   task [--model <alias|auto>] [--background] [--fresh] [--no-context] [--read-only] <prompt>
+//   task [--model <alias|slug|auto>] [--background] [--fresh] [--no-context] [--read-only] <prompt>
 //   status [job-id] [--json]
 //   result [job-id]
 //
 // Jobs are written in the same shape as the Codex companion's (state.json + jobs/<id>.json
-// + jobs/<id>.log) so the Codex panel shows them too.
+// + jobs/<id>.log) so the agents panel shows them too. Model quota comes from the Antigravity
+// app when it happens to be running; without it the quota is simply unknown.
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -16,20 +17,13 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import {
-  describeStep,
-  discoverServer,
-  listModels,
-  resolveModel,
-  sendMessage,
-  startConversation,
-  summarizeTrajectory,
-  waitForCompletion
-} from "./lib/antigravity-client.mjs";
+import { describeEvent, isQuotaError, listModels as listAgyModels, resolveAgyBinary, runAgy } from "./lib/agy.mjs";
+import { discoverServer, listModels as listAppModels, resolveModel } from "./lib/antigravity-client.mjs";
 import { buildClaudeContextPreamble } from "./lib/claude-context.mjs";
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const MAX_JOBS = 50;
+const TASK_TIMEOUT_MS = 60 * 60_000;
 const nowIso = () => new Date().toISOString();
 const pct = (fraction) => (typeof fraction === "number" ? `${Math.round(fraction * 100)}%` : null);
 
@@ -99,12 +93,31 @@ const logFile = (dir, id) => path.join(dir, "jobs", `${id}.log`);
 
 function writeJob(dir, job) {
   writeJson(jobFile(dir, job.id), job);
-  const { rendered, result, ...summary } = job;
+  const { rendered, result, request, ...summary } = job;
   upsertJob(dir, summary);
 }
 
 function log(file, message) {
-  if (file && message) fs.appendFileSync(file, `[${nowIso()}] ${String(message).trim()}\n`);
+  if (file && message) fs.appendFileSync(file, `[${nowIso()}] ${String(message).replace(/\s+/g, " ").trim()}\n`);
+}
+
+// ---------- models + quota ----------
+
+/** agy's model list, with quota from the Antigravity app when it is running. */
+async function getModels() {
+  const models = await listAgyModels();
+  const quota = new Map();
+  try {
+    const server = await discoverServer();
+    const { models: appModels } = await listAppModels(server);
+    for (const m of appModels) quota.set(m.label, m.remaining);
+  } catch {
+    // App closed: quota unknown, every model counts as available.
+  }
+  return models.map((m) => {
+    const remaining = quota.has(m.label) ? quota.get(m.label) : null;
+    return { ...m, remaining, available: remaining !== 0 };
+  });
 }
 
 // ---------- args ----------
@@ -132,7 +145,7 @@ function parseArgs(argv) {
 // ---------- rendering ----------
 
 function duration(ms) {
-  if (ms == null || ms < 0) return "";
+  if (ms == null || ms < 0 || Number.isNaN(ms)) return "";
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s} с`;
   const m = Math.floor(s / 60);
@@ -146,7 +159,31 @@ function quotaText(job) {
   return ` · квота ${before && after && before !== after ? `${before} → ${after}` : after || before}`;
 }
 
-function renderCard(job, summary) {
+/** +/- line counts for the files agy touched, from git (best effort). */
+function lineCounts(root, files) {
+  const counts = new Map();
+  try {
+    const out = execFileSync("git", ["diff", "--numstat", "HEAD", "--", ...files.map((f) => f.path)], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    for (const line of out.split("\n")) {
+      const [add, del, file] = line.split("\t");
+      if (file) counts.set(path.resolve(root, file), { additions: Number(add) || 0, deletions: Number(del) || 0 });
+    }
+  } catch {}
+  for (const f of files) {
+    if (!counts.has(path.resolve(f.path)) && f.created) {
+      try {
+        counts.set(path.resolve(f.path), { additions: fs.readFileSync(f.path, "utf8").split("\n").filter(Boolean).length, deletions: 0 });
+      } catch {}
+    }
+  }
+  return counts;
+}
+
+function renderCard(job, run) {
   const ok = job.status === "completed";
   const title = job.summary.length > 60 ? `${job.summary.slice(0, 57)}…` : job.summary;
   const took = duration(Date.parse(job.completedAt) - Date.parse(job.startedAt));
@@ -155,37 +192,44 @@ function renderCard(job, summary) {
     ""
   ];
   if (job.fallbackFrom) lines.push(`_${job.fallbackFrom} недоступна (квота), использована ${job.modelLabel}._`, "");
-  lines.push(summary?.finalText?.trim() || job.errorMessage || "(пустой ответ)", "");
-  const files = summary?.fileChanges ?? [];
+  lines.push(run?.finalText?.trim() || job.errorMessage || "(пустой ответ)", "");
+  const files = run?.fileChanges ?? [];
   if (files.length) {
-    const add = files.reduce((n, f) => n + (Number(f.additions) || 0), 0);
-    const del = files.reduce((n, f) => n + (Number(f.deletions) || 0), 0);
+    const counts = lineCounts(job.workspaceRoot, files);
+    const stat = (f) => counts.get(path.resolve(f.path)) ?? { additions: 0, deletions: 0 };
+    const add = files.reduce((n, f) => n + stat(f).additions, 0);
+    const del = files.reduce((n, f) => n + stat(f).deletions, 0);
     lines.push(`**Изменённые файлы (${files.length})** · +${add} −${del}`);
     for (const f of files) {
-      const rel = path.relative(job.workspaceRoot, f.path || "") || f.path;
-      lines.push(`- \`${rel}\`${f.created ? " (новый)" : ""} +${f.additions || 0} −${f.deletions || 0}`);
+      const rel = path.relative(job.workspaceRoot, f.path) || f.path;
+      lines.push(`- \`${rel}\`${f.created ? " (новый)" : ""} +${stat(f).additions} −${stat(f).deletions}`);
     }
     lines.push("");
   }
-  const cmds = summary?.commands ?? [];
+  const cmds = run?.commands ?? [];
   if (cmds.length) {
-    const sorted = [...cmds].sort((a, b) => Number((b.exitCode ?? 0) !== 0) - Number((a.exitCode ?? 0) !== 0));
+    const failed = (c) => c.exitCode != null && c.exitCode !== 0;
+    const sorted = [...cmds].sort((a, b) => Number(failed(b)) - Number(failed(a)));
     lines.push(`**Команды (${cmds.length})**`);
-    for (const c of sorted.slice(0, 12)) lines.push(`- ${c.exitCode === 0 ? "✓" : "✗"} \`${String(c.command).slice(0, 100)}\``);
+    for (const c of sorted.slice(0, 12)) lines.push(`- ${failed(c) ? "✗" : "✓"} \`${String(c.command).slice(0, 100)}\``);
     lines.push("");
   }
-  if (summary?.errors?.length) lines.push(`**Ошибки:** ${summary.errors.slice(0, 3).join("; ")}`, "");
-  lines.push(`Разговор в Antigravity: \`${job.threadId}\``);
+  lines.push(`Разговор agy: \`${job.threadId ?? "—"}\` · продолжить: \`agy --conversation ${job.threadId ?? "<id>"}\``);
   return `${lines.join("\n").trim()}\n`;
 }
 
 // ---------- task ----------
 
-const PHASE_BY_STEP = {
-  CORTEX_STEP_TYPE_CODE_ACTION: "editing",
-  CORTEX_STEP_TYPE_RUN_COMMAND: "verifying",
-  CORTEX_STEP_TYPE_PLANNER_RESPONSE: "investigating"
-};
+function phaseFor(event) {
+  const step = event?.step_update;
+  if (!step) return null;
+  if (step.step_type === "tool") {
+    if (step.tool_name === "edit_file" || step.tool_name === "write_file") return "editing";
+    if (step.tool_name === "run_command") return "verifying";
+    return "investigating";
+  }
+  return step.step_type === "agent_response" ? "investigating" : null;
+}
 
 async function runJob(dir, job) {
   const file = logFile(dir, job.id);
@@ -194,54 +238,64 @@ async function runJob(dir, job) {
   job.pid = process.pid;
   job.startedAt = nowIso();
   writeJob(dir, job);
-  try {
-    const server = await discoverServer();
-    let cascadeId = job.threadId;
-    if (!cascadeId) {
-      cascadeId = await startConversation(server, { cwd: job.workspaceRoot });
-      log(file, `Started Antigravity conversation ${cascadeId}.`);
-    } else {
-      log(file, `Continuing Antigravity conversation ${cascadeId}.`);
-    }
-    job.threadId = cascadeId;
-    writeJob(dir, job);
-    if (job.sessionId) {
-      updateState(dir, (s) => {
-        s.threads[job.sessionId] = { cascadeId, lastTaskAt: job.startedAt };
-      });
-    }
-    await sendMessage(server, { cascadeId, text: job.request.prompt, model: job.model });
-    log(file, `Sent task to ${job.modelLabel}.`);
-    let seen = 0;
-    const final = await waitForCompletion(server, cascadeId, {
-      minSteps: job.request.skipSteps ?? 0,
-      onStep(step, index) {
-        if (index < (job.request.skipSteps ?? 0)) return;
-        seen = index + 1;
-        log(file, describeStep(step));
-        const phase = PHASE_BY_STEP[step.type];
+
+  const attempt = (model) =>
+    runAgy({
+      cwd: job.workspaceRoot,
+      prompt: job.request.prompt,
+      model,
+      conversationId: job.threadId,
+      readOnly: !job.write,
+      timeoutMs: TASK_TIMEOUT_MS,
+      onEvent(event, state) {
+        if (state.conversationId && state.conversationId !== job.threadId) {
+          job.threadId = state.conversationId;
+          writeJob(dir, job);
+          if (job.sessionId) {
+            updateState(dir, (s) => {
+              s.threads[job.sessionId] = { agyConversationId: job.threadId, lastTaskAt: job.startedAt };
+            });
+          }
+        }
+        log(file, describeEvent(event, state));
+        const phase = phaseFor(event);
         if (phase && phase !== job.phase && !(job.phase === "verifying" && phase === "investigating")) {
           job.phase = phase;
           upsertJob(dir, { id: job.id, phase });
         }
       }
     });
-    const steps = final?.trajectory?.steps ?? [];
-    const summary = summarizeTrajectory({ ...final, trajectory: { ...final.trajectory, steps: steps.slice(job.request.skipSteps ?? 0) } });
+
+  try {
+    let run = await attempt(job.model);
+    // Out of quota: switch once to the next model for the same wish.
+    if (run.status !== "SUCCESS" && isQuotaError(run)) {
+      const models = (await getModels()).map((m) => (m.model === job.model ? { ...m, available: false } : m));
+      const { entry } = resolveModel(models, job.request.wish);
+      if (entry && entry.model !== job.model) {
+        log(file, `Quota exhausted for ${job.modelLabel}; retrying on ${entry.label}.`);
+        job.fallbackFrom = job.modelLabel;
+        job.model = entry.model;
+        job.modelLabel = entry.label;
+        job.quotaBefore = entry.remaining ?? null;
+        writeJob(dir, job);
+        run = await attempt(entry.model);
+      }
+    }
     try {
-      const { models: after } = await listModels(server);
-      job.quotaAfter = after.find((m) => m.model === job.model)?.remaining ?? null;
+      job.quotaAfter = (await getModels()).find((m) => m.model === job.model)?.remaining ?? null;
     } catch {
       job.quotaAfter = null;
     }
-    job.status = summary.finalText ? "completed" : "failed";
-    job.phase = job.status === "completed" ? "done" : "failed";
+    const ok = run.status === "SUCCESS" && Boolean(run.finalText);
+    job.status = ok ? "completed" : "failed";
+    job.phase = ok ? "done" : "failed";
+    if (!ok) job.errorMessage = run.error || run.stderr?.trim().split("\n").slice(-3).join(" ") || `agy завершился с кодом ${run.exitCode}`;
     job.completedAt = nowIso();
     job.pid = null;
-    job.result = { rawOutput: summary.finalText, fileChanges: summary.fileChanges, commands: summary.commands, errors: summary.errors, steps: seen };
-    job.rendered = renderCard(job, summary);
+    job.result = { rawOutput: run.finalText, fileChanges: run.fileChanges, commands: run.commands, usage: run.usage };
+    job.rendered = renderCard(job, run);
     writeJob(dir, job);
-    upsertJob(dir, { id: job.id, summary: job.summary });
     return job;
   } catch (error) {
     job.status = "failed";
@@ -258,34 +312,25 @@ async function runJob(dir, job) {
 
 async function handleTask(flags, text) {
   if (!text) throw new Error("Нужен текст задачи: antigravity-companion task <prompt>");
+  if (!resolveAgyBinary()) {
+    throw new Error("Не найден Antigravity CLI (agy). Установите: curl -fsSL https://antigravity.google/cli/install.sh | bash, затем один раз запустите agy и войдите.");
+  }
   const cwd = flags.cwd || process.cwd();
   const root = workspaceRoot(cwd);
   const dir = stateDir(root);
   const sessionId = process.env.ANTIGRAVITY_COMPANION_SESSION_ID || null;
 
-  const server = await discoverServer();
-  const { models } = await listModels(server);
-  const { entry, fallbackFrom } = resolveModel(models, flags.model || "auto");
-  if (!entry) throw new Error("В Antigravity нет доступных моделей (закончилась квота?). Проверьте: antigravity-companion models");
+  const wish = flags.model || "auto";
+  const { entry, fallbackFrom } = resolveModel(await getModels(), wish);
+  if (!entry) throw new Error("agy не вернул доступных моделей. Проверьте: antigravity-companion models");
 
-  // Continue this Claude session's conversation unless asked for a fresh one.
+  // Continue this Claude session's agy conversation unless asked for a fresh one.
   const thread = !flags.fresh && sessionId ? loadState(dir).threads[sessionId] : null;
-  let skipSteps = 0;
-  if (thread?.cascadeId) {
-    try {
-      const { getTrajectory } = await import("./lib/antigravity-client.mjs");
-      const existing = await getTrajectory(server, thread.cascadeId);
-      skipSteps = existing?.trajectory?.steps?.length ?? 0;
-    } catch {
-      skipSteps = 0;
-    }
-  }
-  const continuing = Boolean(thread?.cascadeId) && skipSteps > 0;
+  const continuing = Boolean(thread?.agyConversationId);
   const context = flags.noContext
     ? ""
     : buildClaudeContextPreamble({ sinceMs: continuing ? Date.parse(thread.lastTaskAt) : undefined, disabled: false }) || "";
-  const guard = flags.readOnly ? "Do not modify any files and do not run commands that change state. Only read, analyse and answer.\n\n" : "";
-  const prompt = `${guard}${text}${context ? `\n\n${context}` : ""}`;
+  const prompt = `${text}${context ? `\n\n${context}` : ""}`;
 
   const id = `ag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const job = {
@@ -301,10 +346,10 @@ async function handleTask(flags, text) {
     fallbackFrom: fallbackFrom ?? null,
     workspaceRoot: root,
     sessionId,
-    threadId: continuing ? thread.cascadeId : null,
+    threadId: continuing ? thread.agyConversationId : null,
     createdAt: nowIso(),
     logFile: logFile(dir, id),
-    request: { prompt, skipSteps }
+    request: { prompt, wish }
   };
   fs.writeFileSync(job.logFile, "");
   log(job.logFile, `Starting Antigravity task on ${entry.label}${pct(entry.remaining) ? ` (quota ${pct(entry.remaining)})` : ""}.`);
@@ -342,18 +387,18 @@ async function handleWorker(flags) {
 // ---------- models / status / result ----------
 
 async function handleModels(flags) {
-  const server = await discoverServer();
-  const { models, defaultModel } = await listModels(server);
+  const models = await getModels();
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({ models, defaultModel }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(models, null, 2)}\n`);
     return;
   }
-  const lines = ["| Модель | Алиас | Квота |", "|---|---|---|"];
+  const known = models.some((m) => m.remaining != null);
+  const lines = ["| Модель | `--model` | Квота |", "|---|---|---|"];
   for (const m of models) {
-    const quota = m.remaining == null ? "—" : `${Math.round(m.remaining * 100)}%`;
-    const alias = m.family !== "other" ? `${m.family}${m.level ? `-${m.level}` : ""}` : m.model;
-    lines.push(`| ${m.available ? "" : "~~"}${m.label}${m.available ? "" : "~~"} | \`${alias}\` | ${quota} |`);
+    const quota = m.remaining == null ? "—" : pct(m.remaining);
+    lines.push(`| ${m.available ? "" : "~~"}${m.label}${m.available ? "" : "~~"} | \`${m.model}\` | ${quota} |`);
   }
+  if (!known) lines.push("", "_Квота неизвестна: приложение Antigravity закрыто. Откройте его, чтобы видеть остаток._");
   process.stdout.write(`${lines.join("\n")}\n`);
 }
 
@@ -411,7 +456,7 @@ async function main() {
   if (command === "result") return handleResult(flags, text);
   process.stdout.write(
     "Usage: antigravity-companion <models|task|status|result>\n" +
-      "  task [--model <alias|auto>] [--background] [--fresh] [--no-context] [--read-only] <prompt>\n"
+      "  task [--model <alias|slug|auto>] [--background] [--fresh] [--no-context] [--read-only] <prompt>\n"
   );
 }
 

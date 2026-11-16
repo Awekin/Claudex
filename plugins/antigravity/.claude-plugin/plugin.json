@@ -1,6 +1,8 @@
 {
   "name": "antigravity",
-  "version": "0.1.0",
-  "description": "Delegate coding tasks from Claude Code to Antigravity models (Gemini 4 Hydrogen/Argon, Gemini Flash, Claude Opus/Sonnet via your Google plan).",
-  "author": { "name": "Awekin" }
+  "version": "0.2.0",
+  "description": "Delegate coding tasks from Claude Code to Antigravity models through the official Antigravity CLI (agy): Gemini 4 Hydrogen/Argon, Gemini Flash, Claude Opus/Sonnet.",
+  "author": {
+    "name": "Awekin"
+  }
 }

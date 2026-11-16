@@ -69,15 +69,16 @@
 
 ### 🚀 Antigravity: модели Google в Claude Code
 
-Плагин `antigravity` отдаёт задачи агенту из запущенного приложения [Antigravity](https://antigravity.google): он правит файлы проекта, запускает команды и отвечает карточкой, как Codex.
+Плагин `antigravity` отдаёт задачи официальному [Antigravity CLI](https://antigravity.google/docs/install?tab=cli) `agy`, так же, как плагин Codex работает через `codex`: агент правит файлы проекта, запускает команды и отвечает карточкой.
 
 - **Модели:** Gemini 4 Hydrogen (Low → XHigh), Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5 / Sonnet 5.5, GPT-OSS. Набор зависит от вашей подписки, список и остаток квоты показывает `/antigravity:models`.
 - **Автовыбор:** Claude сам выбирает модель под задачу: Flash для мелочей, Hydrogen для обычной работы, Hydrogen High/XHigh для сложного, Argon или Opus/Sonnet для второго мнения. Перед дорогими моделями Claude смотрит квоту, а карточка ответа показывает квоту модели до и после задачи. Если квота кончилась, плагин переключится на следующую модель и скажет об этом.
-- **Память:** задачи из одного чата Claude идут в один разговор Antigravity, его видно в самом приложении.
+- **Память:** задачи из одного чата Claude идут в один разговор `agy`; продолжить его в терминале: `agy --conversation <id>`.
+- **Квота:** если приложение Antigravity открыто, плагин берёт из него остаток квоты по каждой модели; без приложения квота просто не показывается.
 - **Панель:** задачи Antigravity показываются в той же боковой панели, с меткой модели.
 
-> [!WARNING]
-> Плагин работает через локальный внутренний интерфейс Antigravity, а не через официальный API. Antigravity должен быть запущен; обновление Antigravity может сломать интеграцию.
+> [!NOTE]
+> Задачи из `agy` хранятся в истории CLI, а не в списке разговоров приложения Antigravity. Следить за ними удобно в боковой панели и карточках.
 
 ### 🃏 Карточка ответа
 
@@ -102,7 +103,7 @@
 - [Claude Code](https://claude.com/claude-code): приложение Claude (вкладка Code) или CLI.
 - Codex: ChatGPT.app с Codex, Codex.app или CLI `codex` (`npm install -g @openai/codex`) с выполненным входом в аккаунт OpenAI.
 - Node.js 18.18+.
-- Для плагина `antigravity`: установленное и запущенное приложение Antigravity с выполненным входом.
+- Для плагина `antigravity`: Antigravity CLI — `curl -fsSL https://antigravity.google/cli/install.sh | bash`, затем один раз запустить `agy` и войти в аккаунт Google. Приложение Antigravity нужно только для показа квоты.
 - Панель `codex-panel` работает в приложении Claude (вкладка Code); в терминальном CLI остаются карточки и `/codex:status`.
 
 **В терминале:**
@@ -165,7 +166,7 @@ Claude знает о плагинах сам: достаточно написа�
 | `CODEX_COMPANION_NO_PROJECT=1` | Не привязывать треды к проектам Codex App |
 | `CODEX_COMPANION_CODEX_BIN=/путь/к/codex` | Свой путь к Codex CLI |
 | `CODEX_COMPANION_PLAIN_OUTPUT=1` | Голый текст ответа вместо карточки |
-| `ANTIGRAVITY_LS_ADDRESS`, `ANTIGRAVITY_CSRF_TOKEN` | Указать сервер Antigravity вручную, если автопоиск не сработал |
+| `ANTIGRAVITY_AGY_BIN=/путь/к/agy` | Свой путь к Antigravity CLI |
 | `ANTIGRAVITY_COMPANION_NO_CLAUDE_CONTEXT=1` | Не передавать переписку из Claude в Antigravity |
 
 ---

@@ -29,8 +29,8 @@
     },
     {
       "name": "antigravity",
-      "description": "Delegate coding tasks to Antigravity models (Gemini 4 Hydrogen/Argon, Flash, Claude Opus/Sonnet) from Claude Code.",
-      "version": "0.1.0",
+      "description": "Delegate coding tasks to Antigravity models through the official agy CLI (Gemini 4 Hydrogen/Argon, Flash, Claude Opus/Sonnet).",
+      "version": "0.2.0",
       "author": {
         "name": "Awekin"
       },

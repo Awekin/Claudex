@@ -1,5 +1,5 @@
 ---
-description: Delegate a coding task, fix or second opinion to an Antigravity model (Gemini 4 Hydrogen/Argon, Flash, Claude Opus/Sonnet)
+description: Delegate a coding task, fix or second opinion to an Antigravity model via agy (Gemini 4 Hydrogen/Argon, Flash, Claude Opus/Sonnet)
 argument-hint: "[--model <hydrogen|hydrogen-high|hydrogen-xhigh|argon|flash|opus|sonnet|auto>] [--background] [--fresh] [--no-context] [--read-only] <task>"
 allowed-tools: Bash(node:*)
 ---
